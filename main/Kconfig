@@ -1,0 +1,28 @@
+menu "UART CONFIG"
+    config BAUD_RATE
+        int "UART communication speed"
+        range 1200 115200 
+        default 115200
+        help 
+            UART communication speed 
+    config TX_PIN
+        int "UART TX_PIN"
+        range 0 48 
+        default 17
+        help 
+            UART TX_PIN Number
+    
+    config RX_PIN
+        int "UART RX_PIN"
+        range 0 48 
+        default 16
+        help 
+            UART RX_PIN Number
+    
+    config TASK_STACK_SIZE
+        int "UART TASK_STACK_SIZE"
+        range 1024 8192
+        default 4096
+        help 
+            UART TASK_STACK_SIZE
+        endmenu
