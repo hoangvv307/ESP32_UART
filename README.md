@@ -229,7 +229,8 @@ Replace `<PORT>` with your board's serial port (e.g. `COM5` on Windows, `/dev/tt
 
 Example output from the VS Code integrated terminal (ESP-IDF Monitor), showing both TX and RX tasks running simultaneously while communicating with an STM32 board over UART:
 
-<img width="700" alt="uart_terminal_output" src="https://github.com/user-attachments/assets/PASTE_YOUR_LINK_HERE" />
+<img width="1318" height="568" alt="Screenshot 2026-08-21 095313" src="https://github.com/user-attachments/assets/685f2365-74a2-463d-9cb1-be49a75e0b5f" />
+
 
 ```
 I (8607) RX_TASK: 0x3ffb6df0  68 65 6c 6c 6f 20 65 73  70 33 32 20 66 72 6f 6d  |hello esp32 from|
