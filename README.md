@@ -43,7 +43,8 @@ This repo demonstrates **two different UART receive methods**:
 
 Configured in **STM32CubeMX**: `Connectivity → USART1 → Mode: Asynchronous`.
 
-![USART1 Configuration](images/usart1_config.png)
+![USART1 Configuration](<img width="1250" height="639" alt="Screenshot 2026-08-21 093137" src="https://github.com/user-attachments/assets/b56388c5-a1a4-4787-bd11-c8ee16d985dc" />
+)
 
 ---
 
