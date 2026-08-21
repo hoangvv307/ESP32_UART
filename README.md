@@ -1,248 +1,202 @@
-# STM32 UART Communication (Interrupt & DMA)
+ESP32 UART Communication (ESP-IDF + FreeRTOS)
 
-A practice project demonstrating UART communication on the **STM32F103C8T6** (Blue Pill), built with STM32CubeMX and Keil MDK-ARM. The board transmits/receives data over USART1, communicating with another device (e.g. ESP32).
+A practice project demonstrating UART communication on the ESP32, built with ESP-IDF and FreeRTOS. The board transmits and receives data over UART1, communicating with another device (e.g. STM32).
 
-This repo demonstrates **two different UART receive methods**:
-- **Interrupt (IT)** — receiving data byte by byte
-- **DMA (Idle Line Detection)** — receiving a full data packet with minimal CPU usage
+This project uses two independent FreeRTOS tasks:
 
-## Table of Contents
+TX Task — periodically sends a message over UART
+RX Task — continuously listens for incoming UART data
+Table of Contents
+1. Hardware Configuration
+2. Project Structure
+3. UART Initialization
+4. Sending Data — TX Task
+5. Receiving Data — RX Task
+6. Application Entry Point
+7. Build & Run
+8. Sample Output
+9. Notes
+1. Hardware Configuration
 
-- [1. Hardware Configuration](#1-hardware-configuration)
-- [2. Method 1 — UART Receive via Interrupt (IT)](#2-method-1--uart-receive-via-interrupt-it)
-  - [CubeMX Configuration](#cubemx-configuration)
-  - [Variable Declarations](#variable-declarations-user-code-begin-0)
-  - [Starting Interrupt-based Reception](#starting-interrupt-based-reception-user-code-begin-2)
-  - [Main Loop](#main-loop-user-code-begin-3)
-  - [Receive-Complete Callback](#receive-complete-callback-user-code-begin-4)
-  - [Verifying via Debug](#verifying-via-debug-watch-window)
-  - [Pros / Cons of IT](#pros--cons-of-it)
-- [3. Method 2 — UART Receive via DMA (Idle Line Detection)](#3-method-2--uart-receive-via-dma-idle-line-detection)
-  - [CubeMX Configuration](#cubemx-configuration-1)
-  - [Variable Declarations](#variable-declarations-user-code-begin-0-1)
-  - [Starting Idle-Line Reception](#starting-idle-line-reception-user-code-begin-2)
-  - [Idle-Detected Callback](#idle-detected-callback-user-code-begin-4)
-  - [Pros / Cons of DMA](#pros--cons-of-dma)
-- [4. Quick Comparison: IT vs DMA](#4-quick-comparison-it-vs-dma)
-- [5. Project Structure](#5-project-structure)
-- [6. Notes](#6-notes)
+UART pins and communication parameters are configurable through menuconfig (Kconfig), instead of being hardcoded in the source file.
 
----
+Parameter	Kconfig Option	Default
+Baud rate	CONFIG_BAUD_RATE	115200
+TX Pin	CONFIG_TX_PIN	GPIO17
+RX Pin	CONFIG_RX_PIN	GPIO16
+Task stack size	CONFIG_TASK_STACK_SIZE	4096
+Kconfig:
 
-## 1. Hardware Configuration
+menu "UART CONFIG"
+    config BAUD_RATE
+        int "UART communication speed"
+        range 1200 115200
+        default 115200
+        help
+            UART communication speed
 
-| Parameter              | Value                           |
-|-------------------------|----------------------------------|
-| MCU                     | STM32F103C8T6 (LQFP48)          |
-| Peripheral              | USART1                          |
-| Mode                    | Asynchronous                    |
-| Hardware Flow Control   | Disable                         |
-| Baudrate                | As configured in `MX_USART1_UART_Init()` |
-| TX Pin                  | PA9 (USART1_TX)                 |
-| RX Pin                  | PA10 (USART1_RX)                |
+    config TX_PIN
+        int "UART TX_PIN"
+        range 0 48
+        default 17
+        help
+            UART TX_PIN Number
 
-Configured in **STM32CubeMX**: `Connectivity → USART1 → Mode: Asynchronous`.
+    config RX_PIN
+        int "UART RX_PIN"
+        range 0 48
+        default 16
+        help
+            UART RX_PIN Number
 
-<img width="700" alt="usart1_config" src="https://github.com/user-attachments/assets/3c27d2ae-87da-40fd-86b4-118e46abd119" />
+    config TASK_STACK_SIZE
+        int "UART TASK_STACK_SIZE"
+        range 1024 8192
+        default 4096
+        help
+            UART TASK_STACK_SIZE
+endmenu
 
----
+To change these values, run:
 
-## 2. Method 1 — UART Receive via Interrupt (IT)
+bash
+idf.py menuconfig
 
-### CubeMX Configuration
-- Enable **USART1** only — no DMA required.
-- Under **NVIC Settings**, `USART1 global interrupt` is enabled automatically once UART is turned on.
+Then navigate to UART CONFIG.
 
-### Variable Declarations (USER CODE BEGIN 0)
-
-```c
-uint8_t tx_buff[] = "hello esp32 from stm32\r\n";
-
-uint8_t rx_byte;
-char    rx_buff[100];
-uint8_t rx_index = 0;
-```
-
-<img width="700" alt="it_main_declarations" src="https://github.com/user-attachments/assets/92f3da60-44f1-4d56-998f-70be36cfebca" />
-
-- `rx_byte`: temporary buffer holding the single byte just received by the interrupt.
-- `rx_buff`: buffer that accumulates bytes into a complete string.
-- `rx_index`: current write position in `rx_buff`.
-
-### Starting Interrupt-based Reception (USER CODE BEGIN 2)
-
-```c
-HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
-```
-
-Called once before the `while(1)` loop to start listening for the first incoming byte.
-
-### Main Loop (USER CODE BEGIN 3)
-
-```c
-while (1)
-{
-    HAL_UART_Transmit(&huart1, tx_buff, sizeof(tx_buff) - 1, 1000);
-    HAL_Delay(2000);
-}
-```
-
-Every 2 seconds, the STM32 transmits the string `"hello esp32 from stm32\r\n"` over UART.
-
-<img width="700" alt="it_main_init_loop" src="https://github.com/user-attachments/assets/a660189e-2411-4376-bfa5-0dd1985985c7" />
-
-### Receive-Complete Callback (USER CODE BEGIN 4)
-
-```c
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart->Instance == USART1)
-    {
-        if (rx_index < sizeof(rx_buff) - 1)
-        {
-            rx_buff[rx_index++] = rx_byte;
-
-            if (rx_byte == '\n')
-            {
-                rx_buff[rx_index] = '\0';
-                rx_index = 0;
-            }
-        }
-        else
-        {
-            rx_index = 0;
-        }
-
-        // Re-arm interrupt reception for the next byte
-        HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
-    }
-}
-```
-
-<img width="700" alt="it_rx_callback" src="https://github.com/user-attachments/assets/27fdb417-b317-41a6-bf0f-df8338498f87" />
-
-**How it works:**
-1. Every time UART finishes receiving one byte, an interrupt fires and HAL automatically calls `HAL_UART_RxCpltCallback`.
-2. That byte is appended to `rx_buff`.
-3. When a `'\n'` character is detected (end of line), the string is considered complete and `rx_index` is reset to prepare for the next packet.
-4. `HAL_UART_Receive_IT()` **must be called again** at the end of the callback — otherwise UART will only receive a single byte and then stop listening.
-
-### Verifying via Debug (Watch Window)
-
-Using Keil's Debug mode, add `rx_buff` to the **Watch 1** window to observe incoming data in real time (e.g. seeing `"Hello st..."` when the ESP32 sends a string).
-
-<img width="700" alt="it_debug_watch" src="https://github.com/user-attachments/assets/00398a80-f208-4124-ae4f-0eb9db761e75" />
-
-### Pros / Cons of IT
-| Pros | Cons |
-|---|---|
-| Simple to understand and debug | Interrupt fires on every single byte — CPU load increases at high baud rates |
-| No DMA configuration needed | Data can be lost if the callback processing is too slow |
-
----
-
-## 3. Method 2 — UART Receive via DMA (Idle Line Detection)
-
-### CubeMX Configuration
-
-1. Enable **USART1** as usual.
-2. Go to the **DMA Settings** tab → click **Add** → add two DMA requests:
-
-| DMA Request | Channel | Direction |
-|---|---|---|
-| USART1_RX | DMA1 Channel 5 | Peripheral To Memory |
-| USART1_TX | DMA1 Channel 4 | Memory To Peripheral |
-
-<img width="700" alt="dma_config" src="https://github.com/user-attachments/assets/f0a77cd4-2f3d-4e92-b574-7a72739b7aad" />
-
-3. CubeMX will automatically generate the `MX_DMA_Init()` function and the following handles:
-
-```c
-DMA_HandleTypeDef hdma_usart1_rx;
-DMA_HandleTypeDef hdma_usart1_tx;
-```
-
-### Variable Declarations (USER CODE BEGIN 0)
-
-```c
-uint8_t tx_buff[] = "hello esp32 from stm32\r\n";
-uint8_t rx_buff[100];
-```
-
-<img width="700" alt="dma_main_declarations" src="https://github.com/user-attachments/assets/36c83cfe-e07e-41f6-8047-bdc3ec7010cd" />
-
-No `rx_byte` or `rx_index` are needed here — DMA automatically writes the whole incoming packet directly into `rx_buff`.
-
-### Starting Idle-Line Reception (USER CODE BEGIN 2)
-
-```c
-MX_GPIO_Init();
-MX_DMA_Init();
-MX_USART1_UART_Init();
-
-HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buff, sizeof(rx_buff));
-```
-
-<img width="700" alt="dma_main_init" src="https://github.com/user-attachments/assets/401679bb-fc45-447c-9ff9-6a22e0141987" />
-
-`HAL_UARTEx_ReceiveToIdle_DMA` continuously receives data into `rx_buff` and automatically notifies the application once the line becomes **idle** — meaning the sender has stopped transmitting. Unlike the IT method, this does not depend on a specific terminating character such as `'\n'`.
-
-### Idle-Detected Callback (USER CODE BEGIN 4)
-
-```c
-void HAL_UART_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
-{
-    if (huart->Instance == USART1)
-    {
-        rx_buff[size] = '\0';
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buff, sizeof(rx_buff));
-    }
-}
-```
-
-<img width="700" alt="dma_rx_callback" src="https://github.com/user-attachments/assets/bf4ecb2a-c454-4f92-a227-1992841b9b5e" />
-
-**How it works:**
-1. DMA receives data into `rx_buff` in the background, without CPU intervention per byte.
-2. When the UART line goes "idle" (no new data for a certain period), HAL automatically calls `HAL_UART_RxEventCallback`, passing `size` — the actual number of bytes received.
-3. A null terminator `'\0'` is added at position `size` to complete the string.
-4. `HAL_UARTEx_ReceiveToIdle_DMA()` is called again to keep listening for the next packet.
-
-### Pros / Cons of DMA
-| Pros | Cons |
-|---|---|
-| Receives full packets, independent of a terminating character like `\n` | Requires additional DMA channel configuration |
-| Very low CPU usage (DMA runs in the background) | More complex to debug compared to IT |
-| Suitable for high baud rates or larger data payloads | |
-
----
-
-## 4. Quick Comparison: IT vs DMA
-
-| Criteria | Interrupt (IT) | DMA (Idle Line) |
-|---|---|---|
-| Reception granularity | Byte by byte | Full data block |
-| CPU load | Higher (frequent interrupts) | Lower (DMA runs in background) |
-| Needs known packet length in advance | No (relies on `'\n'`) | No (relies on Idle Line detection) |
-| Configuration complexity | Simple | Requires DMA channel setup |
-| Best suited for | Small payloads, low baud rate | Large payloads, high baud rate, performance-critical applications |
-
----
-
-## 5. Project Structure
-
-```
-04_STM32_UART/
-├── Core/
-├── MDK-ARM/
-├── .mxproject
-├── 04_STM32_UART.ioc
+2. Project Structure
+ESP32_UART_EX/
+├── main/
+│   ├── ESP32_UART_EX.c
+│   ├── Kconfig.projbuild
+│   └── CMakeLists.txt
+├── CMakeLists.txt
+├── sdkconfig
 └── README.md
-```
+Root CMakeLists.txt
+cmake
+# The following five lines of boilerplate have to be in your project's
+# CMakeLists in this exact order for cmake to work correctly
+cmake_minimum_required(VERSION 3.16)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(ESP32_UART_EX)
+main/CMakeLists.txt
+cmake
+idf_component_register(SRCS "ESP32_UART_EX.c"
+                    REQUIRES esp_driver_uart esp_driver_gpio
+                    INCLUDE_DIRS ".")
+3. UART Initialization
+c
+static const int RX_BUF_SIZE = 1024;
 
----
+#define TXD_PIN (CONFIG_TX_PIN)
+#define RXD_PIN (CONFIG_RX_PIN)
 
-## 6. Notes
+void init(){
+    const uart_config_t uart_config = {
+        .baud_rate  = CONFIG_BAUD_RATE,
+        .data_bits  = UART_DATA_8_BITS,
+        .parity     = UART_PARITY_DISABLE,
+        .stop_bits  = UART_STOP_BITS_1,
+        .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
 
-- The project was generated with **STM32CubeMX** and built/flashed using **Keil MDK-ARM (µVision)**.
-- All user-added code is placed inside `/* USER CODE BEGIN */ ... /* USER CODE END */` blocks so that CubeMX does not overwrite it when regenerating code.
+    // Install UART driver
+    uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_param_config(UART_NUM_1, &uart_config);
+    uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+}
+
+How it works:
+
+uart_config_t defines the communication parameters (baud rate, data bits, parity, stop bits, flow control) — all pulled from Kconfig instead of hardcoded values.
+uart_driver_install() allocates the internal RX/TX ring buffers used by the driver.
+uart_param_config() applies the configuration to UART_NUM_1.
+uart_set_pin() maps the TX/RX signals to the physical GPIO pins defined in Kconfig.
+4. Sending Data — TX Task
+c
+int sendata(const char* logname, const char* data){
+    const int len = strlen(data);
+    const int txBytes = uart_write_bytes(UART_NUM_1, data, len);
+    ESP_LOGI(logname, "Wrote: %d bytes", txBytes);
+    return txBytes;
+}
+
+static void tx_task(void *arg){
+    static const char *TX_TASK_TAG = "TX_TASK";
+    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+
+    while (1) {
+        sendata(TX_TASK_TAG, "Hello stm32 from esp32\r\n");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+}
+
+How it works:
+
+sendata() wraps uart_write_bytes() and logs how many bytes were actually transmitted.
+tx_task runs forever, sending the string "Hello stm32 from esp32\r\n" every 2 seconds.
+5. Receiving Data — RX Task
+c
+static void rx_task(void *arg){
+    static const char *RX_TASK_TAG = "RX_TASK";
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+
+    uint8_t* data = (uint8_t*)malloc(RX_BUF_SIZE + 1);
+
+    while (1) {
+        const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+
+        if (rxBytes > 0) {
+            data[rxBytes] = 0;
+            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
+            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+        }
+    }
+
+    free(data);
+}
+
+How it works:
+
+uart_read_bytes() blocks for up to 1000 ms waiting for incoming data, returning the number of bytes actually read.
+If data was received, a null terminator is appended so it can be logged as a C string.
+ESP_LOG_BUFFER_HEXDUMP() additionally prints the raw bytes in hex — useful for verifying non-printable characters (like \r\n) were received correctly.
+6. Application Entry Point
+c
+void app_main(void)
+{
+   init();
+   xTaskCreate(rx_task, "uart_rx_task", CONFIG_TASK_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
+   xTaskCreate(tx_task, "uart_tx_task", CONFIG_TASK_STACK_SIZE, NULL, configMAX_PRIORITIES - 2, NULL);
+}
+init() sets up the UART peripheral.
+rx_task is created with a higher priority (configMAX_PRIORITIES - 1) than tx_task (configMAX_PRIORITIES - 2), since receiving incoming data should not be delayed by the transmit loop.
+7. Build & Run
+bash
+idf.py set-target esp32
+idf.py menuconfig     # optional: adjust TX/RX pins, baud rate, stack size
+idf.py build
+idf.py -p <PORT> flash monitor
+
+Replace <PORT> with your board's serial port (e.g. COM5 on Windows, /dev/ttyUSB0 on Linux).
+
+8. Sample Output
+
+Example output from the VS Code integrated terminal (ESP-IDF Monitor), showing both TX and RX tasks running simultaneously while communicating with an STM32 board over UART:
+
+<img width="700" alt="uart_terminal_output" src="https://github.com/user-attachments/assets/PASTE_YOUR_LINK_HERE" />
+I (8607) RX_TASK: 0x3ffb6df0  68 65 6c 6c 6f 20 65 73  70 33 32 20 66 72 6f 6d  |hello esp32 from|
+I (8607) RX_TASK: 0x3ffb6e00  20 73 74 6d 33 32 0d 0a                          | stm32..|
+I (10297) TX_TASK: Wrote: 24 bytes
+I (10617) RX_TASK: Read 24 bytes: 'hello esp32 from stm32
+'
+I (10617) RX_TASK: 0x3ffb6df0  68 65 6c 6c 6f 20 65 73  70 33 32 20 66 72 6f 6d  |hello esp32 from|
+I (10617) RX_TASK: 0x3ffb6e00  20 73 74 6d 33 32 0d 0a                          | stm32..|
+TX_TASK: Wrote: 24 bytes confirms the ESP32 successfully transmitted its message.
+RX_TASK: Read 24 bytes: '...' shows the message received back from the STM32 (in this test setup, STM32 echoes/sends its own greeting), together with the raw hex dump.
+9. Notes
+This project uses UART_NUM_1 (not the default USB-serial console UART), so a separate physical TX/RX wiring is required to the other device (e.g. STM32).
+All configurable parameters (baud rate, pins, stack size) are exposed via idf.py menuconfig under UART CONFIG, avoiding hardcoded values in the source file.
+rx_task is given higher priority than tx_task to minimize the chance of missing incoming bytes.
