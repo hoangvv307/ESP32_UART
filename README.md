@@ -43,7 +43,7 @@ This repo demonstrates **two different UART receive methods**:
 
 Configured in **STM32CubeMX**: `Connectivity → USART1 → Mode: Asynchronous`.
 
-![USART1 Configuration](images/usart1_config.png)
+<img width="700" alt="usart1_config" src="https://github.com/user-attachments/assets/3c27d2ae-87da-40fd-86b4-118e46abd119" />
 
 ---
 
@@ -63,7 +63,7 @@ char    rx_buff[100];
 uint8_t rx_index = 0;
 ```
 
-![IT variable declarations](images/it_main_declarations.png)
+<img width="700" alt="it_main_declarations" src="https://github.com/user-attachments/assets/92f3da60-44f1-4d56-998f-70be36cfebca" />
 
 - `rx_byte`: temporary buffer holding the single byte just received by the interrupt.
 - `rx_buff`: buffer that accumulates bytes into a complete string.
@@ -89,7 +89,7 @@ while (1)
 
 Every 2 seconds, the STM32 transmits the string `"hello esp32 from stm32\r\n"` over UART.
 
-![IT init and main loop](images/it_main_init_loop.png)
+<img width="700" alt="it_main_init_loop" src="https://github.com/user-attachments/assets/a660189e-2411-4376-bfa5-0dd1985985c7" />
 
 ### Receive-Complete Callback (USER CODE BEGIN 4)
 
@@ -119,7 +119,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 ```
 
-![IT receive callback](images/it_rx_callback.png)
+<img width="700" alt="it_rx_callback" src="https://github.com/user-attachments/assets/27fdb417-b317-41a6-bf0f-df8338498f87" />
 
 **How it works:**
 1. Every time UART finishes receiving one byte, an interrupt fires and HAL automatically calls `HAL_UART_RxCpltCallback`.
@@ -131,7 +131,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 Using Keil's Debug mode, add `rx_buff` to the **Watch 1** window to observe incoming data in real time (e.g. seeing `"Hello st..."` when the ESP32 sends a string).
 
-![Debug watch window showing received data](images/it_debug_watch.png)
+<img width="700" alt="it_debug_watch" src="https://github.com/user-attachments/assets/00398a80-f208-4124-ae4f-0eb9db761e75" />
 
 ### Pros / Cons of IT
 | Pros | Cons |
@@ -153,7 +153,7 @@ Using Keil's Debug mode, add `rx_buff` to the **Watch 1** window to observe inco
 | USART1_RX | DMA1 Channel 5 | Peripheral To Memory |
 | USART1_TX | DMA1 Channel 4 | Memory To Peripheral |
 
-![DMA configuration](images/dma_config.png)
+<img width="700" alt="dma_config" src="https://github.com/user-attachments/assets/f0a77cd4-2f3d-4e92-b574-7a72739b7aad" />
 
 3. CubeMX will automatically generate the `MX_DMA_Init()` function and the following handles:
 
@@ -169,7 +169,7 @@ uint8_t tx_buff[] = "hello esp32 from stm32\r\n";
 uint8_t rx_buff[100];
 ```
 
-![DMA variable declarations](images/dma_main_declarations.png)
+<img width="700" alt="dma_main_declarations" src="https://github.com/user-attachments/assets/36c83cfe-e07e-41f6-8047-bdc3ec7010cd" />
 
 No `rx_byte` or `rx_index` are needed here — DMA automatically writes the whole incoming packet directly into `rx_buff`.
 
@@ -183,7 +183,7 @@ MX_USART1_UART_Init();
 HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buff, sizeof(rx_buff));
 ```
 
-![DMA reception init](images/dma_main_init.png)
+<img width="700" alt="dma_main_init" src="https://github.com/user-attachments/assets/401679bb-fc45-447c-9ff9-6a22e0141987" />
 
 `HAL_UARTEx_ReceiveToIdle_DMA` continuously receives data into `rx_buff` and automatically notifies the application once the line becomes **idle** — meaning the sender has stopped transmitting. Unlike the IT method, this does not depend on a specific terminating character such as `'\n'`.
 
@@ -200,7 +200,7 @@ void HAL_UART_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 }
 ```
 
-![DMA receive callback](images/dma_rx_callback.png)
+<img width="700" alt="dma_rx_callback" src="https://github.com/user-attachments/assets/bf4ecb2a-c454-4f92-a227-1992841b9b5e" />
 
 **How it works:**
 1. DMA receives data into `rx_buff` in the background, without CPU intervention per byte.
@@ -230,3 +230,19 @@ void HAL_UART_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 ---
 
 ## 5. Project Structure
+
+```
+04_STM32_UART/
+├── Core/
+├── MDK-ARM/
+├── .mxproject
+├── 04_STM32_UART.ioc
+└── README.md
+```
+
+---
+
+## 6. Notes
+
+- The project was generated with **STM32CubeMX** and built/flashed using **Keil MDK-ARM (µVision)**.
+- All user-added code is placed inside `/* USER CODE BEGIN */ ... /* USER CODE END */` blocks so that CubeMX does not overwrite it when regenerating code.
